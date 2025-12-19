@@ -1,5 +1,16 @@
+# Virtual environments
 .venv/
+
+# Python cache
 __pycache__/
 *.pyc
+
+
+# Miscellaneous
+RunAppLocally.txt
 .DS_Store
 .env
+*.egg-info/
+.streamlit/
+.vscode/
+
