@@ -5,11 +5,26 @@
 __pycache__/
 *.pyc
 
-# Miscellaneous
-RunAppLocally.txt
+# Runtime / generated data
+data/raw/
+data/defaults
+data/download/
+data/exports/
+data/*.csv
+data/*.xlsx
+
+# Backups
+*_BAK.py
+* - Copy.py
+
+# Docs (local notes only)
+docs/
+
+# OS / editor junk
 .DS_Store
 .env
 *.egg-info/
-.streamlit/
 .vscode/
+RunAppLocally.txt
+index.html
 
