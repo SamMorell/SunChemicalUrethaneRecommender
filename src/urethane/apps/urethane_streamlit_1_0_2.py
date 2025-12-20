@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
+from datetime import datetime
 
 from urethane.core.urethane_core import (
     load_default_dataset,
@@ -14,7 +15,7 @@ from urethane.core.urethane_core import (
 )
 
 APP_VERSION = "1.0.2"
-RUNNING_LABEL = "RUNNING: urethane_streamlit_1_0_2 (via shim)"
+#RUNNING_LABEL = "RUNNING: urethane_streamlit_1_0_2 (via shim)"
 GIF_FILENAME = "sammorell.com_animated_header.gif"
 
 
@@ -47,6 +48,10 @@ def _find_first_existing(paths: List[Path]) -> Optional[Path]:
             return p
     return None
 
+def get_script_timestamp() -> str:
+    script_path = Path(__file__)
+    ts = script_path.stat().st_mtime
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
 
 def render_header() -> None:
     # --- CSS ---
@@ -86,16 +91,30 @@ def render_header() -> None:
     # --- Animated GIF header ---
     gif_path = _find_first_existing(_candidate_gif_locations(GIF_FILENAME))
     if gif_path:
-        st.image(str(gif_path), use_container_width=False, width=520)
+        st.image(str(gif_path), use_container_width=False, width=360)
 
     # --- Title + Version ---
-    st.markdown('<div class="ucr-title">Sun Chemical Urethane Recommender</div>', unsafe_allow_html=True)
-    st.caption(f"v{APP_VERSION}")
-    st.caption(RUNNING_LABEL)
     st.markdown(
-        '<div class="ucr-subtle">Select requirements and receive recommended urethane systems.</div>',
+        '<div class="ucr-title">Sun Chemical Urethane Recommender</div>',
         unsafe_allow_html=True,
     )
+
+    st.caption(f"{APP_VERSION} ({get_script_timestamp()})")
+
+    #st.caption(f"v{APP_VERSION}")
+    #st.caption(f"{APP_VERSION}")
+
+    #st.caption(f"{get_script_timestamp()}")
+    #st.caption(f"Last updated: {get_script_timestamp()}")
+
+    #st.caption(RUNNING_LABEL)
+
+    #st.markdown(
+        #'<div class="ucr-subtle">'
+        #'Select requirements and receive recommended urethane systems.'
+        #'</div>',
+        #unsafe_allow_html=True,
+    #)
 
 
 def section(title: str) -> None:
