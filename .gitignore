@@ -1,29 +1,28 @@
-# Virtual environments
+# Virtual Environments
 .venv/
 
-# Python cache
+# Python Cache
 __pycache__/
 *.pyc
 
-# Runtime / generated data
-data/raw/
+# Data Directories
 data/download/
-data/exports/
-data/*.csv
-data/*.xlsx
+data/processed/
+data/raw/
+data/uploads
 
-# Backups
-*_BAK.py
-* - Copy.py
-
-# Docs (local notes only)
+# Documentation
 docs/
+RunAppLocally.txt
 
-# OS / editor junk
+# Archived Directory
+archived/
+
+# OS
 .DS_Store
 .env
 *.egg-info/
 .vscode/
-RunAppLocally.txt
-index.html
+
+
 
