@@ -7,9 +7,7 @@ __pycache__/
 
 # Data Directories
 data/downloads/
-data/processed/
 data/raw/
-data/uploads
 
 # Documentation
 docs/
