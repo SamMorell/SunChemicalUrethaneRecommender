@@ -1,7 +1,7 @@
 """
 Core (framework-agnostic) logic for the Sun Chemical urethane recommender.
 
-This version uses an Excel dataset on disk (default: data/defaults/default_dataset_409.xlsx)
+This version uses an Excel dataset on disk (default: data/defaults/default_dataset.xlsx)
 instead of a built-in encoded dataset.
 """
 
@@ -15,7 +15,7 @@ import pandas as pd
 
 
 # --------- Defaults ---------
-DEFAULT_DATASET_PATH = Path("data/defaults/default_dataset_409.xlsx")
+DEFAULT_DATASET_PATH = Path("data/defaults/default_dataset.xlsx")
 
 # Expected canonical columns (after normalization)
 REQUIRED_COLS = [
@@ -105,7 +105,7 @@ def _resolve_path(path: Optional[str | Path]) -> Path:
 def load_default_dataset(path: Optional[str | Path] = None) -> pd.DataFrame:
     """
     Load the default Excel dataset.
-    If path is None, uses data/defaults/default_dataset_409.xlsx
+    If path is None, uses data/defaults/default_dataset.xlsx
     """
     p = _resolve_path(path)
 
