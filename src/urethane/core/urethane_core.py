@@ -85,11 +85,39 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _unique(series: pd.Series) -> List[str]:
+    """Alphabetical unique list (fallback)."""
     vals = series.dropna().astype(str).str.strip()
     vals = vals[vals != ""]
     out = sorted(set(vals.tolist()))
     return out
 
+
+def _unique_sorted_by_order(
+    value_series: pd.Series,
+    order_series: Optional[pd.Series] = None,
+) -> List[str]:
+    """Return unique values ordered by an accompanying numeric sort order column.
+
+    - If order_series is missing/None OR all values are NaN, falls back to alphabetical.
+    - If there are multiple rows per value, uses the minimum order number for that value.
+    """
+    vals = value_series.dropna().astype(str).str.strip()
+    vals = vals[vals != ""]
+    if vals.empty:
+        return []
+
+    if order_series is None:
+        return sorted(set(vals.tolist()))
+
+    orders = pd.to_numeric(order_series, errors="coerce")
+    if orders.isna().all():
+        return sorted(set(vals.tolist()))
+
+    tmp = pd.DataFrame({"val": vals, "ord": orders})
+    tmp = tmp.dropna(subset=["val"])
+    grp = tmp.groupby("val", as_index=False)["ord"].min()
+    grp = grp.sort_values(["ord", "val"], ascending=[True, True])
+    return grp["val"].tolist()
 
 def _resolve_path(path: Optional[str | Path]) -> Path:
     if path is None:
@@ -146,6 +174,15 @@ def load_uploaded_dataset(uploaded_file) -> pd.DataFrame:
 
 def get_dropdown_options(df: pd.DataFrame) -> Dict[str, Any]:
     """
+    Dropdown options with sort-order support.
+
+    If the dataset includes:
+      - category_sort_order
+      - end_use_sort_order
+
+    ...then Category and End Use dropdowns will be ordered by those numeric values
+    (ascending), with alphabetical as a tiebreaker.
+
     Returns a dict where:
       - options["category"] is a list[str]
       - others are callables that return list[str] based on parent selections
@@ -153,11 +190,17 @@ def get_dropdown_options(df: pd.DataFrame) -> Dict[str, Any]:
     """
     options: Dict[str, Any] = {}
 
-    options["category"] = _unique(df["category"])
+    has_cat_order = "category_sort_order" in df.columns
+    has_end_order = "end_use_sort_order" in df.columns
+
+    # Category list (sorted by Category_Sort_Order if present)
+    cat_orders = df["category_sort_order"] if has_cat_order else None
+    options["category"] = _unique_sorted_by_order(df["category"], cat_orders)
 
     def end_use(category: str) -> List[str]:
         sub = df[df["category"] == category]
-        return _unique(sub["end_use"])
+        end_orders = sub["end_use_sort_order"] if has_end_order else None
+        return _unique_sorted_by_order(sub["end_use"], end_orders)
 
     def application(category: str, end_use: str) -> List[str]:
         sub = df[(df["category"] == category) & (df["end_use"] == end_use)]
@@ -217,7 +260,6 @@ def get_dropdown_options(df: pd.DataFrame) -> Dict[str, Any]:
     options["composition"] = composition
 
     return options
-
 
 def filter_recommendations(
     df: pd.DataFrame,
