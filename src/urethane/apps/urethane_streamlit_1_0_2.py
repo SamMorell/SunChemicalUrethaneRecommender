@@ -2,6 +2,12 @@ from __future__ import annotations
 
 import streamlit as st
 import pandas as pd
+
+def _drop_internal_sort_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove internal sort-order columns from display/export outputs."""
+    cols_to_drop = [c for c in ["category_sort_order", "end_use_sort_order"] if c in df.columns]
+    return df.drop(columns=cols_to_drop, errors="ignore")
+
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 from datetime import datetime
@@ -220,6 +226,7 @@ def main() -> None:
                 application=application,
                 selected_features=selected_features,
                 sb_wb_hs_p=sb_wb_hs_p,
+                            composition=composition,
             )
 
             # If your core supports composition filtering, do it here safely:
@@ -237,11 +244,13 @@ def main() -> None:
             st.warning("No recommendations found for the selected criteria.")
             return
 
-        st.dataframe(results_df, use_container_width=True)
+        results_out = _drop_internal_sort_columns(results_df)
+
+        st.dataframe(results_out, use_container_width=True)
 
         # Export
         try:
-            xlsx_bytes = export_recommendations_excel(results_df)
+            xlsx_bytes = export_recommendations_excel(results_out)
             st.download_button(
                 "Download Excel",
                 data=xlsx_bytes,
