@@ -6,7 +6,7 @@ __pycache__/
 *.pyc
 
 # Data Directories
-data/download/
+data/downloads/
 data/processed/
 data/raw/
 data/uploads
