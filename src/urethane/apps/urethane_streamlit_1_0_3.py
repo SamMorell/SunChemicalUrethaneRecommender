@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import streamlit as st
 import pandas as pd
+import re
+import base64
 
 def _drop_internal_sort_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Remove internal sort-order columns from display/export outputs."""
@@ -20,10 +22,72 @@ from urethane.core.urethane_core import (
     export_recommendations_excel,
 )
 
-APP_VERSION = "1.0.2"
-#RUNNING_LABEL = "RUNNING: urethane_streamlit_1_0_2 (via shim)"
+
+# ---------------- PDS helpers ----------------
+def _normalize_product_name(product: str) -> str:
+    """Convert 'POLURGREEN MT 100' -> 'Polurgreen_MT_100_(PDS).pdf' (best-effort)."""
+    s = (product or "").strip()
+    # Title-ish casing for nicer filenames, but keep acronyms/nums.
+    # We'll just use original tokens and replace spaces with underscores.
+    s = re.sub(r"\s+", "_", s)
+    # Remove characters that are problematic in filenames/URLs
+    s = re.sub(r"[^A-Za-z0-9_\-]", "", s)
+    return f"{s}_(PDS).pdf"
+
+def _split_product_choices(cell: str) -> list[str]:
+    """Split strings like 'A or B' into ['A','B']"""
+    if cell is None:
+        return []
+    s = str(cell).strip()
+    if not s:
+        return []
+    parts = [p.strip() for p in s.split(" or ")]
+    # If user uses OR uppercase, handle that too
+    if len(parts) == 1 and " OR " in s:
+        parts = [p.strip() for p in s.split(" OR ")]
+    return [p for p in parts if p]
+
+def _find_pds_file(product: str, pds_dir: Path) -> Path | None:
+    if not pds_dir.exists():
+        return None
+    target = _normalize_product_name(product).lower()
+    # direct
+    direct = pds_dir / _normalize_product_name(product)
+    if direct.exists():
+        return direct
+    # case-insensitive scan
+    for f in pds_dir.glob("*.pdf"):
+        if f.name.lower() == target:
+            return f
+    return None
+
+def _pdf_data_url(pdf_path: Path) -> str:
+    data = pdf_path.read_bytes()
+    b64 = base64.b64encode(data).decode("ascii")
+    return f"data:application/pdf;base64,{b64}"
+
+APP_VERSION = "1.0.3"
+#RUNNING_LABEL = "RUNNING: urethane_streamlit_1_0_3 (via shim)"
 GIF_FILENAME = "sammorell.com_animated_header.gif"
 
+
+
+
+def _get_repo_root() -> Path:
+    """Best-effort repo root finder.
+
+    Works locally (full repo) and on Streamlit Cloud (repo cloned).
+    """
+    here = Path(__file__).resolve()
+    for parent in [here] + list(here.parents):
+        if (parent / "pyproject.toml").exists() or (parent / ".git").exists():
+            return parent
+    # Fallback for src/urethane/apps layout
+    # .../src/urethane/apps/<this_file>.py -> parents[3] == repo root
+    try:
+        return here.parents[3]
+    except IndexError:
+        return here.parent
 
 # ---------------------------
 # Helpers: paths + UI styling
@@ -248,7 +312,52 @@ def main() -> None:
 
         st.dataframe(results_out, use_container_width=True)
 
+        # --- Product Data Sheets (PDS) ---
+        repo_root = _get_repo_root()
+        pds_dir = repo_root / "data" / "pds"
+        products_for_pds: list[str] = []
+        if "component_a" in results_out.columns:
+            for v in results_out["component_a"].dropna().unique().tolist():
+                products_for_pds.extend(_split_product_choices(str(v)))
+        if "component_b" in results_out.columns:
+            for v in results_out["component_b"].dropna().unique().tolist():
+                products_for_pds.extend(_split_product_choices(str(v)))
+
+        # Deduplicate while preserving order
+        seen = set()
+        products_for_pds = [p for p in products_for_pds if not (p.lower() in seen or seen.add(p.lower()))]
+
+        with st.expander("Product Data Sheets", expanded=False):
+            any_found = False
+            for i, product in enumerate(products_for_pds):
+                pdf_path = _find_pds_file(product, pds_dir)
+                if pdf_path:
+                    any_found = True
+                    pdf_bytes = pdf_path.read_bytes()
+                    data_url = _pdf_data_url(pdf_path)
+                    # A true "open in new tab" link (works in browsers; Streamlit will still sandbox local file://)
+                    st.markdown(
+                        f'<a href="{data_url}" target="_blank" rel="noopener">📄 View PDS: {product}</a>',
+                        unsafe_allow_html=True,
+                    )
+                    st.download_button(
+                        label=f"Download PDS: {product}",
+                        data=pdf_bytes,
+                        file_name=pdf_path.name,
+                        mime="application/pdf",
+                        key=f"pds_dl_{i}",
+                    )
+                    st.divider()
+                else:
+                    st.warning(f"PDS not found for {product}")
+
+            if not products_for_pds:
+                st.info("No products found in the results to look up PDS files.")
+            elif not any_found:
+                st.info("No matching PDS PDFs were found in data/pds.")
+
         # Export
+
         try:
             xlsx_bytes = export_recommendations_excel(results_out)
             st.download_button(
