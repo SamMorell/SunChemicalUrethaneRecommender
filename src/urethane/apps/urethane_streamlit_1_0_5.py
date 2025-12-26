@@ -239,20 +239,21 @@ def render_header() -> None:
             line-height: 1.1;
         }
         .ucr-subtle {
-            color: #6b7280; /* gray-ish */
+            #color: #6b7280; /* gray-ish */
             font-family: 'Segoe UI', Arial, sans-serif;
             font-size: 0.95rem;
             margin-top: 0.1em;
-            margin-bottom: 1.0em;
+            margin-bottom: 1em;
         }
         .ucr-section {
             color: #FFA500;
             font-family: 'Segoe UI', Arial, sans-serif;
             font-size: 1.6rem;
             font-weight: 600;
-            margin-top: 1.4em;
+            margin-top: 1.0em;
             margin-bottom: 0.5em;
-            border-top: 2px solid #e5e7eb;
+            #border-top: 6px solid #e5e7eb;
+            border-top: 2px solid rgb(255, 165, 0);
             padding-bottom: 0.2em;
         }
 
@@ -372,6 +373,7 @@ def main() -> None:
     # Repo root (used for locating data/ and pds/ folders)
     repo_root = _find_repo_root(Path(__file__).resolve())
 
+    section("Application/Product Guide")
 
     # ---- Data source ----
     with st.expander("Data source", expanded=False):
@@ -392,7 +394,7 @@ def main() -> None:
         return
 
     # ---- Application/Product Guide ----
-    section("Application/Product Guide")
+    # section("Application/Product Guide")
 
     options = get_dropdown_options(df)
 
