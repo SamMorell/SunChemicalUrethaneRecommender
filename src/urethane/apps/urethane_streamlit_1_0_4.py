@@ -99,7 +99,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 from datetime import datetime
 
 from urethane.core.urethane_core import (
-    load_default_dataset,
+    load_application_product,
     load_uploaded_dataset,
     get_dropdown_options,
     filter_recommendations,
@@ -353,14 +353,14 @@ def main() -> None:
 
     # ---- Data source ----
     with st.expander("Data source", expanded=False):
-        st.write("Default dataset is loaded unless you upload a replacement Excel file.")
-        uploaded = st.file_uploader("Upload dataset (Excel)", type=["xlsx", "xls"])
+        st.write("application_product dataset is loaded.")
+        uploaded = st.file_uploader("Upload Excel dataset of your choice.", type=["xlsx", "xls"])
 
     try:
         if uploaded is not None:
             df = load_uploaded_dataset(uploaded)
         else:
-            df = load_default_dataset()
+            df = load_application_product()
     except Exception as e:
         st.error(f"Failed to load dataset: {e}")
         return
@@ -490,7 +490,7 @@ def main() -> None:
             st.download_button(
                 "Download Excel",
                 data=xlsx_bytes,
-                file_name="urethane_recommendations.xlsx",
+                file_name="Application Proudct Recommendations.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
         except Exception as e:

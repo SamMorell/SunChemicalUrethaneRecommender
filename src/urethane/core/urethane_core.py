@@ -1,7 +1,7 @@
 """
 Core (framework-agnostic) logic for the Sun Chemical urethane recommender.
 
-This version uses an Excel dataset on disk (default: data/defaults/default_dataset.xlsx)
+This version uses an Excel dataset on disk (default: data/defaults/application_product.xlsx)
 instead of a built-in encoded dataset.
 """
 
@@ -18,7 +18,7 @@ import pandas as pd
 
 
 # --------- Defaults ---------
-DEFAULT_DATASET_PATH = Path("data/defaults/default_dataset.xlsx")
+DEFAULT_DATASET_PATH = Path("data/defaults/application_product.xlsx")
 
 # Expected canonical columns (after normalization)
 REQUIRED_COLS = [
@@ -133,10 +133,10 @@ def _resolve_path(path: Optional[str | Path]) -> Path:
 
 
 # --------- Public API used by Streamlit ---------
-def load_default_dataset(path: Optional[str | Path] = None) -> pd.DataFrame:
+def load_application_product(path: Optional[str | Path] = None) -> pd.DataFrame:
     """
     Load the default Excel dataset.
-    If path is None, uses data/defaults/default_dataset.xlsx
+    If path is None, uses data/defaults/application_product.xlsx
     """
     p = _resolve_path(path)
 
