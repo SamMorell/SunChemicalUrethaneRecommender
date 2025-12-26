@@ -1,8 +1,6 @@
 from __future__ import annotations
-from openpyxl.styles import Alignment
 
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import re
 import base64
@@ -11,89 +9,6 @@ def _drop_internal_sort_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Remove internal sort-order columns from display/export outputs."""
     cols_to_drop = [c for c in ["category_sort_order", "end_use_sort_order"] if c in df.columns]
     return df.drop(columns=cols_to_drop, errors="ignore")
-
-
-def _prettify_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Make dataframe column labels more user-friendly.
-    - Replace _ with space
-    - Title Case
-    - Special-case a few columns
-    """
-    out = df.copy()
-    mapping = {c: c.replace("_", " ").title() for c in out.columns}
-    # Special cases / branding
-    mapping.update(
-        {
-            "sb_wb_hs_p": "SB / WB / HS / P",
-            "sb_wb_hs": "SB / WB / HS / P",
-            "component_a": "Component A",
-            "component_b": "Component B",
-            "end_use": "End Use",
-        }
-    )
-    out.rename(columns=mapping, inplace=True)
-    return out
-
-
-def _results_column_widths(cols):
-    """Column widths tuned for a wide, readable layout."""
-    widths = {}
-    for c in cols:
-        if c in {"Component A", "Component B"}:
-            widths[c] = "medium"
-        elif c in {"Application", "Features"}:
-            widths[c] = "medium"
-        elif c in {"Category", "End Use"}:
-            widths[c] = "small"
-        else:
-            widths[c] = "small"
-    return widths
-
-
-def _render_pdf_view_button(label: str, pdf_bytes: bytes, key: str) -> None:
-    """Render a button that opens the PDF in a NEW browser tab.
-    Uses a data: URL inside the new tab to avoid the Chrome 'about:blank until reload' behavior.
-    """
-    b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-
-    html = f"""
-    <div style="margin: 0.25rem 0;">
-      <button
-        id="{key}"
-        style="padding:0.45rem 0.7rem; border:1px solid #d1d5db; border-radius:0.5rem; background:white; cursor:pointer;"
-      >
-        📄 View PDS: {label}
-      </button>
-    </div>
-    <script>
-      (function() {{
-        const btn = document.getElementById("{key}");
-        if (!btn) return;
-
-        btn.addEventListener("click", function() {{
-          const pdfUrl = "data:application/pdf;base64,{b64}";
-
-          const w = window.open("", "_blank");
-          if (!w) return;
-
-          w.document.open();
-          w.document.write(`
-            <!doctype html>
-            <html>
-              <head><title>{label} (PDS)</title></head>
-              <body style="margin:0;">
-                <iframe src="${{pdfUrl}}" style="border:0; width:100vw; height:100vh;"></iframe>
-              </body>
-            </html>
-          `);
-          w.document.close();
-          w.focus();
-        }});
-      }})();
-    </script>
-    """
-
-    components.html(html, height=70)
 
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -238,32 +153,6 @@ def render_header() -> None:
             border-bottom: 2px solid #e5e7eb;
             padding-bottom: 0.2em;
         }
-
-        /* --- DataFrame/table readability tweaks --- */
-        div[data-testid="stDataFrame"] * {
-            font-size: 16px !important;
-        }
-        div[data-testid="stDataFrame"] thead th {
-            justify-content: flex-start !important; /* left align headers */
-        }
-        div[data-testid="stDataFrame"] td, div[data-testid="stDataFrame"] th {
-            padding-top: 6px !important;
-            padding-bottom: 6px !important;
-        }
-
-        
-        /* --- Dataframe readability tweaks --- */
-        div[data-testid="stDataFrame"] * {
-            font-size: 16px !important;
-        }
-        div[data-testid="stDataFrame"] div[role="gridcell"] {
-            padding-top: 0.35rem !important;
-            padding-bottom: 0.35rem !important;
-        }
-        div[data-testid="stDataFrame"] div[role="columnheader"] {
-            justify-content: flex-start !important; /* left align headers */
-        }
-
         </style>
         """,
         unsafe_allow_html=True,
@@ -421,10 +310,7 @@ def main() -> None:
 
         results_out = _drop_internal_sort_columns(results_df)
 
-        results_display = _prettify_columns(results_out)
-        col_widths = _results_column_widths(list(results_display.columns))
-        column_config = {c: st.column_config.TextColumn(width=col_widths.get(c, "medium")) for c in results_display.columns}
-        st.dataframe(results_display, use_container_width=True, hide_index=True, column_config=column_config)
+        st.dataframe(results_out, use_container_width=True)
 
         # --- Product Data Sheets (PDS) ---
         repo_root = _get_repo_root()
@@ -473,7 +359,7 @@ def main() -> None:
         # Export
 
         try:
-            xlsx_bytes = export_recommendations_excel(_prettify_columns(results_out))
+            xlsx_bytes = export_recommendations_excel(results_out)
             st.download_button(
                 "Download Excel",
                 data=xlsx_bytes,
