@@ -1,10 +1,25 @@
-from __future__ import annotations
+"""Sun Chemical Urethane Recommender (Streamlit) — organized."""
 
+from __future__ import annotations
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import re
 import base64
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Union
+from datetime import datetime
+from urethane.core.urethane_core import (
+    load_application_product,
+    load_uploaded_dataset,
+    get_dropdown_options,
+    filter_recommendations,
+    export_recommendations_excel,
+)
+
+# =====================
+# App code starts here
+# =====================
 
 def _drop_internal_sort_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Remove internal sort-order columns from display/export outputs."""
@@ -94,21 +109,6 @@ def _render_pdf_view_button(label: str, pdf_bytes: bytes, key: str) -> None:
 
     components.html(html, height=70)
 
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
-from datetime import datetime
-
-from urethane.core.urethane_core import (
-    load_application_product,
-    load_uploaded_dataset,
-    get_dropdown_options,
-    filter_recommendations,
-    export_recommendations_excel,
-)
-
-
-
-from pathlib import Path
 
 def _find_repo_root(start_path: Path) -> Path:
     """
@@ -171,8 +171,6 @@ def _pdf_data_url(pdf_path: Path) -> str:
 APP_VERSION = "1.0.5"
 #RUNNING_LABEL = "RUNNING: urethane_streamlit_1_0_5 (via shim)"
 GIF_FILENAME = "sammorell.com_animated_header.gif"
-
-
 
 
 def _get_repo_root() -> Path:
@@ -311,22 +309,7 @@ def render_header() -> None:
 
     st.caption(f"{APP_VERSION} ({get_script_timestamp()})")
 
-    #st.caption(f"v{APP_VERSION}")
-    #st.caption(f"{APP_VERSION}")
-
-    #st.caption(f"{get_script_timestamp()}")
-    #st.caption(f"Last updated: {get_script_timestamp()}")
-
-    #st.caption(RUNNING_LABEL)
-
-    #st.markdown(
-        #'<div class="ucr-subtle">'
-        #'Select requirements and receive recommended urethane systems.'
-        #'</div>',
-        #unsafe_allow_html=True,
-    #)
-
-
+    
 def section(title: str) -> None:
     st.markdown(f'<div class="ucr-section">{title}</div>', unsafe_allow_html=True)
 
@@ -365,6 +348,95 @@ def _get_options(options: Dict[str, Any], key: str, *args) -> List[str]:
 # ---------------------------
 # Main app
 # ---------------------------
+
+def render_product_type_guide(repo_root: Path) -> None:
+    # ---- Product Type Guide ----
+
+    # ---- Product Type Guide (from data/defaults/product_type.xlsx) ----
+    # This section is intentionally self-contained so it doesn't affect the
+    # Application/Product Guide logic above.
+
+    product_type_path = repo_root / "data" / "defaults" / "product_type.xlsx"
+    if not product_type_path.exists():
+        st.info(f"Product Type Guide file not found: {product_type_path}")
+        return
+
+    try:
+        pt_df = pd.read_excel(product_type_path)
+    except Exception as e:
+        st.error(f"Failed to load Product Type Guide dataset: {e}")
+        return
+
+    required_cols = {"Product Type", "Product Type Order"}
+    if not required_cols.issubset(set(pt_df.columns)):
+        st.error(
+            "Product Type Guide dataset must include columns: "
+            + ", ".join(sorted(required_cols))
+        )
+        return
+
+    
+    # Build dropdowns in the same style as the first guide:
+    # cascade filters left-to-right based on the columns in the spreadsheet.
+    # 'Product Type' is ordered by 'Product Type Order' (numeric ascending).
+
+    section("Product Type Guide")
+    
+    pt_filter_cols = [c for c in pt_df.columns if c != "Product Type Order"]
+
+    def _pt_unique(col: str, frame: pd.DataFrame):
+        vals = frame[col].dropna().astype(str).str.strip()
+        vals = [v for v in vals if v]
+        if col == "Product Type":
+            # keep the spreadsheet-defined order
+            order_map = (
+                frame.dropna(subset=["Product Type", "Product Type Order"])
+                .assign(_pt=lambda d: d["Product Type"].astype(str).str.strip())
+                .groupby("_pt")["Product Type Order"]
+                .min()
+                .to_dict()
+            )
+            return sorted(set(vals), key=lambda v: (order_map.get(v, 10**9), v.lower()))
+        return sorted(set(vals), key=lambda v: v.lower())
+
+    # Cascading dropdowns
+    pt_selections = {}
+    filtered = pt_df.copy()
+    for col in pt_filter_cols:
+        opts = _pt_unique(col, filtered)
+        opts = ["(All)"] + opts
+        pt_selections[col] = st.selectbox(col, opts, key=f"pt_{col}")
+        if pt_selections[col] != "(All)":
+            filtered = filtered[filtered[col].astype(str).str.strip() == pt_selections[col]]
+
+    st.markdown("")  # small spacer
+
+    if st.button("Get Product Type Recommendations", key="btn_product_types"):
+        out = filtered.copy()
+        # sort by spreadsheet order then drop the sort column from display/export
+        out = out.sort_values(by=["Product Type Order", "Product Type"], kind="mergesort")
+        out = out.drop(columns=["Product Type Order"], errors="ignore")
+
+        out_pretty = _prettify_columns(out)
+
+        if out_pretty.empty:
+            st.warning("No matches for the selected Product Type filters.")
+        else:
+            st.dataframe(out_pretty, use_container_width=True)
+
+            try:
+                xlsx_bytes = export_recommendations_excel(out_pretty)
+                st.download_button(
+                    "Download Recommendations (Excel)",
+                    data=xlsx_bytes,
+                    file_name="Product Type Recommendations.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_product_type_excel",
+                )
+            except Exception as e:
+                st.error(f"Export failed: {e}")
+
+
 def main() -> None:
     st.set_page_config(page_title="Sun Chemical Urethane Recommender", layout="wide")
 
@@ -394,8 +466,7 @@ def main() -> None:
         return
 
     # ---- Application/Product Guide ----
-    # section("Application/Product Guide")
-
+    
     options = get_dropdown_options(df)
 
     category_list = _get_options(options, "category")
@@ -426,8 +497,7 @@ def main() -> None:
         composition = ""
 
     # ---- Results ----
-    # subsection("Results")
-
+    
     if st.button("Get Application/Product Recommendations"):
         try:
             # IMPORTANT: core signature uses selected_features (NOT features=)
@@ -521,87 +591,4 @@ def main() -> None:
             st.error(f"Export failed: {e}")
             return
         
-    # ---- Product Type Guide ----
-
-    # ---- Product Type Guide (from data/defaults/product_type.xlsx) ----
-    # This section is intentionally self-contained so it doesn't affect the
-    # Application/Product Guide logic above.
-
-    product_type_path = repo_root / "data" / "defaults" / "product_type.xlsx"
-    if not product_type_path.exists():
-        st.info(f"Product Type Guide file not found: {product_type_path}")
-        return
-
-    try:
-        pt_df = pd.read_excel(product_type_path)
-    except Exception as e:
-        st.error(f"Failed to load Product Type Guide dataset: {e}")
-        return
-
-    required_cols = {"Product Type", "Product Type Order"}
-    if not required_cols.issubset(set(pt_df.columns)):
-        st.error(
-            "Product Type Guide dataset must include columns: "
-            + ", ".join(sorted(required_cols))
-        )
-        return
-
-    section("Product Type Guide")
-
-    # Build dropdowns in the same style as the first guide:
-    # cascade filters left-to-right based on the columns in the spreadsheet.
-    # 'Product Type' is ordered by 'Product Type Order' (numeric ascending).
-    pt_filter_cols = [c for c in pt_df.columns if c != "Product Type Order"]
-
-    def _pt_unique(col: str, frame: pd.DataFrame):
-        vals = frame[col].dropna().astype(str).str.strip()
-        vals = [v for v in vals if v]
-        if col == "Product Type":
-            # keep the spreadsheet-defined order
-            order_map = (
-                frame.dropna(subset=["Product Type", "Product Type Order"])
-                .assign(_pt=lambda d: d["Product Type"].astype(str).str.strip())
-                .groupby("_pt")["Product Type Order"]
-                .min()
-                .to_dict()
-            )
-            return sorted(set(vals), key=lambda v: (order_map.get(v, 10**9), v.lower()))
-        return sorted(set(vals), key=lambda v: v.lower())
-
-    # Cascading dropdowns
-    pt_selections = {}
-    filtered = pt_df.copy()
-    for col in pt_filter_cols:
-        opts = _pt_unique(col, filtered)
-        opts = ["(All)"] + opts
-        pt_selections[col] = st.selectbox(col, opts, key=f"pt_{col}")
-        if pt_selections[col] != "(All)":
-            filtered = filtered[filtered[col].astype(str).str.strip() == pt_selections[col]]
-
-    st.markdown("")  # small spacer
-
-    if st.button("Get Product Type Recommendations", key="btn_product_types"):
-        out = filtered.copy()
-        # sort by spreadsheet order then drop the sort column from display/export
-        out = out.sort_values(by=["Product Type Order", "Product Type"], kind="mergesort")
-        out = out.drop(columns=["Product Type Order"], errors="ignore")
-
-        out_pretty = _prettify_columns(out)
-
-        if out_pretty.empty:
-            st.warning("No matches for the selected Product Type filters.")
-        else:
-            st.dataframe(out_pretty, use_container_width=True)
-
-            try:
-                xlsx_bytes = export_recommendations_excel(out_pretty)
-                st.download_button(
-                    "Download Recommendations (Excel)",
-                    data=xlsx_bytes,
-                    file_name="Product Type Recommendations.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="dl_product_type_excel",
-                )
-            except Exception as e:
-                st.error(f"Export failed: {e}")
-    # section("Product Type Guide")
+    render_product_type_guide(repo_root)
