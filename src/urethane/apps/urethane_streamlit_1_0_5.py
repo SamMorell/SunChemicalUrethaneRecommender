@@ -107,6 +107,24 @@ from urethane.core.urethane_core import (
 )
 
 
+
+from pathlib import Path
+
+def _find_repo_root(start_path: Path) -> Path:
+    """
+    Walk upward from start_path until a directory containing 'data' is found.
+    Assumes project layout:
+        repo_root/
+            data/
+            src/
+    """
+    current = start_path
+    for parent in [current, *current.parents]:
+        if (parent / "data").exists():
+            return parent
+    raise RuntimeError("Could not locate repository root (folder containing 'data').")
+
+
 # ---------------- PDS helpers ----------------
 def _normalize_product_name(product: str) -> str:
     """Convert 'POLURGREEN MT 100' -> 'Polurgreen_MT_100_(PDS).pdf' (best-effort)."""
@@ -150,8 +168,8 @@ def _pdf_data_url(pdf_path: Path) -> str:
     b64 = base64.b64encode(data).decode("ascii")
     return f"data:application/pdf;base64,{b64}"
 
-APP_VERSION = "1.0.4"
-#RUNNING_LABEL = "RUNNING: urethane_streamlit_1_0_4 (via shim)"
+APP_VERSION = "1.0.5"
+#RUNNING_LABEL = "RUNNING: urethane_streamlit_1_0_5 (via shim)"
 GIF_FILENAME = "sammorell.com_animated_header.gif"
 
 
@@ -351,6 +369,10 @@ def main() -> None:
 
     render_header()
 
+    # Repo root (used for locating data/ and pds/ folders)
+    repo_root = _find_repo_root(Path(__file__).resolve())
+
+
     # ---- Data source ----
     with st.expander("Data source", expanded=False):
         st.write("application_product dataset is loaded.")
@@ -402,9 +424,9 @@ def main() -> None:
         composition = ""
 
     # ---- Results ----
-    subsection("Results")
+    # subsection("Results")
 
-    if st.button("Get Recommendations"):
+    if st.button("Get Application/Product Recommendations"):
         try:
             # IMPORTANT: core signature uses selected_features (NOT features=)
             results_df = filter_recommendations(
@@ -488,7 +510,7 @@ def main() -> None:
         try:
             xlsx_bytes = export_recommendations_excel(_prettify_columns(results_out))
             st.download_button(
-                "Download Excel",
+                "Download Recommendations (Excel)",
                 data=xlsx_bytes,
                 file_name="Application Product Recommendations.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -498,4 +520,86 @@ def main() -> None:
             return
         
     # ---- Product Type Guide ----
+
+    # ---- Product Type Guide (from data/defaults/product_type.xlsx) ----
+    # This section is intentionally self-contained so it doesn't affect the
+    # Application/Product Guide logic above.
+
+    product_type_path = repo_root / "data" / "defaults" / "product_type.xlsx"
+    if not product_type_path.exists():
+        st.info(f"Product Type Guide file not found: {product_type_path}")
+        return
+
+    try:
+        pt_df = pd.read_excel(product_type_path)
+    except Exception as e:
+        st.error(f"Failed to load Product Type Guide dataset: {e}")
+        return
+
+    required_cols = {"Product Type", "Product Type Order"}
+    if not required_cols.issubset(set(pt_df.columns)):
+        st.error(
+            "Product Type Guide dataset must include columns: "
+            + ", ".join(sorted(required_cols))
+        )
+        return
+
     section("Product Type Guide")
+
+    # Build dropdowns in the same style as the first guide:
+    # cascade filters left-to-right based on the columns in the spreadsheet.
+    # 'Product Type' is ordered by 'Product Type Order' (numeric ascending).
+    pt_filter_cols = [c for c in pt_df.columns if c != "Product Type Order"]
+
+    def _pt_unique(col: str, frame: pd.DataFrame):
+        vals = frame[col].dropna().astype(str).str.strip()
+        vals = [v for v in vals if v]
+        if col == "Product Type":
+            # keep the spreadsheet-defined order
+            order_map = (
+                frame.dropna(subset=["Product Type", "Product Type Order"])
+                .assign(_pt=lambda d: d["Product Type"].astype(str).str.strip())
+                .groupby("_pt")["Product Type Order"]
+                .min()
+                .to_dict()
+            )
+            return sorted(set(vals), key=lambda v: (order_map.get(v, 10**9), v.lower()))
+        return sorted(set(vals), key=lambda v: v.lower())
+
+    # Cascading dropdowns
+    pt_selections = {}
+    filtered = pt_df.copy()
+    for col in pt_filter_cols:
+        opts = _pt_unique(col, filtered)
+        opts = ["(All)"] + opts
+        pt_selections[col] = st.selectbox(col, opts, key=f"pt_{col}")
+        if pt_selections[col] != "(All)":
+            filtered = filtered[filtered[col].astype(str).str.strip() == pt_selections[col]]
+
+    st.markdown("")  # small spacer
+
+    if st.button("Get Product Type Recommendations", key="btn_product_types"):
+        out = filtered.copy()
+        # sort by spreadsheet order then drop the sort column from display/export
+        out = out.sort_values(by=["Product Type Order", "Product Type"], kind="mergesort")
+        out = out.drop(columns=["Product Type Order"], errors="ignore")
+
+        out_pretty = _prettify_columns(out)
+
+        if out_pretty.empty:
+            st.warning("No matches for the selected Product Type filters.")
+        else:
+            st.dataframe(out_pretty, use_container_width=True)
+
+            try:
+                xlsx_bytes = export_recommendations_excel(out_pretty)
+                st.download_button(
+                    "Download Recommendations (Excel)",
+                    data=xlsx_bytes,
+                    file_name="Product Type Recommendations.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_product_type_excel",
+                )
+            except Exception as e:
+                st.error(f"Export failed: {e}")
+    # section("Product Type Guide")
