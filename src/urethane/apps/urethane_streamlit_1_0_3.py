@@ -1,5 +1,4 @@
 from __future__ import annotations
-from openpyxl.styles import Alignment
 
 import streamlit as st
 import streamlit.components.v1 as components

@@ -11,6 +11,9 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from io import BytesIO
+from openpyxl.styles import Alignment
+
 import pandas as pd
 
 
@@ -307,12 +310,18 @@ def filter_recommendations(
     return out
 
 
-def export_recommendations_excel(df: pd.DataFrame) -> BytesIO:
-    """
-    Return an in-memory Excel file for Streamlit download_button.
-    """
-    bio = BytesIO()
-    with pd.ExcelWriter(bio, engine="openpyxl") as writer:
-        df.to_excel(writer, sheet_name="Recommendations", index=False)
-    bio.seek(0)
-    return bio
+def export_recommendations_excel(df: pd.DataFrame) -> bytes:
+    output = BytesIO()  # <-- THIS WAS MISSING
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Recommendations")
+
+        ws = writer.sheets["Recommendations"]
+
+        # Left-align header row
+        for cell in ws[1]:
+            cell.alignment = Alignment(horizontal="left")
+
+    output.seek(0)
+    return output.getvalue()
+
