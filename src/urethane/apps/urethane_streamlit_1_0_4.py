@@ -490,7 +490,7 @@ def main() -> None:
             st.download_button(
                 "Download Excel",
                 data=xlsx_bytes,
-                file_name="Application Proudct Recommendations.xlsx",
+                file_name="Application Product Recommendations.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
         except Exception as e:
