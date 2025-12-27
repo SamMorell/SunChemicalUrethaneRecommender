@@ -170,7 +170,7 @@ def _pdf_data_url(pdf_path: Path) -> str:
 
 APP_VERSION = "1.0.5"
 #RUNNING_LABEL = "RUNNING: urethane_streamlit_1_0_5 (via shim)"
-GIF_FILENAME = "sammorell.com_animated_header.gif"
+GIF_FILENAME = "sammorell.com_animated_header_no_loop.gif"
 
 
 def _get_repo_root() -> Path:
