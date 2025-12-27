@@ -17,6 +17,61 @@ from urethane.core.urethane_core import (
     export_recommendations_excel,
 )
 
+
+# --- ChatGPT
+import pandas as pd
+import re
+
+def filter_recommendations(
+    df: pd.DataFrame,
+    category=None,
+    end_use=None,
+    application=None,
+    selected_features=None,   # list or None
+    sb_wb_hs_p=None,
+    composition=None,
+):
+    out = df.copy()
+
+    # Normalize None/""/"(All)"
+    def norm(v):
+        if v is None:
+            return None
+        v = str(v).strip()
+        return None if v in ("", "(All)") else v
+
+    category = norm(category)
+    end_use = norm(end_use)
+    application = norm(application)
+    sb_wb_hs_p = norm(sb_wb_hs_p)
+    composition = norm(composition)
+
+    # Basic equality filters
+    if category is not None:
+        out = out[out["category"].astype(str).str.strip().eq(category)]
+    if end_use is not None:
+        out = out[out["end_use"].astype(str).str.strip().eq(end_use)]
+    if application is not None:
+        out = out[out["application"].astype(str).str.strip().eq(application)]
+    if sb_wb_hs_p is not None:
+        out = out[out["sb_wb_hs_p"].astype(str).str.strip().eq(sb_wb_hs_p)]
+    if composition is not None:
+        out = out[out["composition"].astype(str).str.strip().eq(composition)]
+
+    # Features: treat as "contains" (safe for multi-value cells)
+    if selected_features:
+        s = out["features"].fillna("").astype(str)
+        for feat in selected_features:
+            feat = norm(feat)
+            if feat is None:
+                continue
+            out = out[s.str.contains(re.escape(feat), na=False)]
+
+    return out
+
+# -------------------------------------------------------------------
+
+
 # =====================
 # App code starts here
 # =====================
@@ -168,7 +223,7 @@ def _pdf_data_url(pdf_path: Path) -> str:
     b64 = base64.b64encode(data).decode("ascii")
     return f"data:application/pdf;base64,{b64}"
 
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
 #RUNNING_LABEL = "RUNNING: urethane_streamlit_1_0_5 (via shim)"
 GIF_FILENAME = "sammorell.com_animated_header_no_loop.gif"
 
@@ -384,7 +439,38 @@ def render_product_type_guide(repo_root: Path) -> None:
     
     pt_filter_cols = [c for c in pt_df.columns if c != "Product Type Order"]
 
-    def _pt_unique(col: str, frame: pd.DataFrame):
+
+
+
+    def _pt_unique(col, df):
+        series = df[col].dropna().astype(str).str.strip()
+
+        # Try numeric sort first
+        numeric_vals = pd.to_numeric(series, errors="coerce")
+
+        if numeric_vals.notna().all():
+            # All values are numeric → sort numerically
+            return (
+                numeric_vals
+                .sort_values()
+                .astype(str)
+                .tolist()
+            )
+
+        # Mixed or non-numeric → fallback to string sort
+        return sorted(series.unique().tolist())
+
+
+
+
+
+
+
+
+
+
+
+    """def _pt_unique(col: str, frame: pd.DataFrame):
         vals = frame[col].dropna().astype(str).str.strip()
         vals = [v for v in vals if v]
         if col == "Product Type":
@@ -397,10 +483,10 @@ def render_product_type_guide(repo_root: Path) -> None:
                 .to_dict()
             )
             return sorted(set(vals), key=lambda v: (order_map.get(v, 10**9), v.lower()))
-        return sorted(set(vals), key=lambda v: v.lower())
+        return sorted(set(vals), key=lambda v: v.lower())"""
 
     # Cascading dropdowns
-    pt_selections = {}
+    """pt_selections = {}
     filtered = pt_df.copy()
     for col in pt_filter_cols:
         opts = _pt_unique(col, filtered)
@@ -409,7 +495,66 @@ def render_product_type_guide(repo_root: Path) -> None:
         if pt_selections[col] != "(All)":
             filtered = filtered[filtered[col].astype(str).str.strip() == pt_selections[col]]
 
-    st.markdown("")  # small spacer
+    st.markdown("")"""  # small spacer
+
+
+
+
+
+    # --- Replace "Cascading dropdowns" loop with this "selected/faceted dropdowns" filtered version. ---
+    #     It computes its options from the dataframe filtered by all the other current selections.
+    pt_filter_cols = [c for c in pt_df.columns if c != "Product Type Order"]
+
+    # Initialize session state for selections once
+    for col in pt_filter_cols:
+        st.session_state.setdefault(f"pt_{col}", "(All)")
+
+    def _apply_filters(frame: pd.DataFrame, selections: dict, exclude_col: str | None = None) -> pd.DataFrame:
+        out = frame
+        for c, v in selections.items():
+            if c == exclude_col:
+                continue
+            if v and v != "(All)":
+                out = out[out[c].astype(str).str.strip() == str(v)]
+        return out
+
+    # Current selections (from session_state)
+    selections = {col: st.session_state.get(f"pt_{col}", "(All)") for col in pt_filter_cols}
+
+    # Render each selectbox with options limited by OTHER selections
+    for col in pt_filter_cols:
+        # Filter by all selections except this column
+        frame_for_opts = _apply_filters(pt_df, selections, exclude_col=col)
+
+        # Build options from the reduced frame
+        opts = _pt_unique(col, frame_for_opts)
+        opts = ["(All)"] + opts
+
+        # If current selection is no longer valid, reset it
+        current = selections[col]
+        if current not in opts:
+            current = "(All)"
+            st.session_state[f"pt_{col}"] = "(All)"
+            selections[col] = "(All)"
+
+        # Render selectbox (index ensures stable selection)
+        st.selectbox(
+            col,
+            opts,
+            index=opts.index(current),
+            key=f"pt_{col}",
+        )
+
+    # The fully-filtered result uses ALL selections
+    filtered = _apply_filters(pt_df, {c: st.session_state[f"pt_{c}"] for c in pt_filter_cols})
+
+    st.markdown("")  # spacer
+
+#--------------------------------------------------------------------------------------------------
+
+
+
+
 
     if st.button("Get Product Type Recommendations", key="btn_product_types"):
         out = filtered.copy()
@@ -465,36 +610,133 @@ def main() -> None:
         st.error("Failed to load dataset: loader did not return a DataFrame.")
         return
 
+
+    # ---- Normalize columns for core filtering ----
+    # The recommendation engine (urethane_core.filter_recommendations) expects snake_case
+    # column names. Some Excel files (or older versions of this app) use Title Case.
+    # Normalize here so UI + filtering operate on the same schema.
+    _col_map = {
+        "Category": "category",
+        "End Use": "end_use",
+        "EndUse": "end_use",
+        "Application": "application",
+        "Features": "features",
+        "SB / WB / HS / P": "sb_wb_hs_p",
+        "SB/WB/HS/P": "sb_wb_hs_p",
+        "Composition": "composition",
+    }
+    df = df.rename(columns={k: v for k, v in _col_map.items() if k in df.columns}).copy()
+
+    # Clean whitespace for key filter columns (string-safe)
+    for _c in ["category", "end_use", "application", "features", "sb_wb_hs_p", "composition"]:
+        if _c in df.columns:
+            df[_c] = df[_c].astype(str).str.strip()
+
     # ---- Application/Product Guide ----
-    
-    options = get_dropdown_options(df)
 
-    category_list = _get_options(options, "category")
-    if not category_list:
-        st.error("No Category options found. Check the dataset column names / loader.")
-        return
-    category = st.selectbox("Category", category_list)
+    import re as _re  # local alias (safe inside Streamlit reruns)
 
-    end_use_list = _get_options(options, "end_use", category)
-    end_use = st.selectbox("End Use", end_use_list) if end_use_list else ""
+    def _ap_norm(v: str):
+        """Normalize UI values for the core recommender.
+        Returns None to mean 'no filter' (this avoids empty-string/empty-list edge cases).
+        """
+        if v is None:
+            return None
+        v = str(v).strip()
+        return None if v in ("", "(All)") else v
 
-    application_list = _get_options(options, "application", category, end_use)
-    application = st.selectbox("Application", application_list) if application_list else ""
+    def _ap_find_col(frame: pd.DataFrame, candidates: list[str]) -> str:
+        cols_lower = {c.strip().lower(): c for c in frame.columns}
+        for cand in candidates:
+            key = cand.strip().lower()
+            if key in cols_lower:
+                return cols_lower[key]
+        raise KeyError(f"None of these columns found in dataset: {candidates}")
 
-    features_list = _get_options(options, "features", category, end_use, application)
-    # If you truly want single-select, keep selectbox; if multi-select later, switch to st.multiselect.
-    features = st.selectbox("Features", features_list) if features_list else ""
-    selected_features = [features] if features else []
+    # Prefer snake_case (what the core recommender typically uses), but fall back to Title Case
+    AP_COLS = {
+        "category": _ap_find_col(df, ["category"]),
+        "end_use": _ap_find_col(df, ["end_use"]),
+        "application": _ap_find_col(df, ["application"]),
+        "features": _ap_find_col(df, ["features"]),
+        "sb_wb_hs_p": _ap_find_col(df, ["sb_wb_hs_p"]),
+        "composition": _ap_find_col(df, ["composition"]),
+    }
 
-    sb_list = _get_options(options, "sb_wb_hs_p", category, end_use, application, selected_features)
-    sb_wb_hs_p = st.selectbox("SB / WB / HS / P", sb_list) if sb_list else ""
+    AP_KEYS_IN_UI_ORDER = ["category", "end_use", "application", "features", "sb_wb_hs_p", "composition"]
 
-    comp_list = _get_options(options, "composition", category, end_use, application, selected_features, sb_wb_hs_p)
-    if comp_list:
-        composition = st.selectbox("Composition", comp_list)
-    else:
-        st.selectbox("Composition", ["No options to select"], disabled=True)
-        composition = ""
+    # Init session state
+    for k in AP_KEYS_IN_UI_ORDER:
+        st.session_state.setdefault(f"ap_{k}", "(All)")
+
+    def _apply_ap_filters(frame: pd.DataFrame, selections: dict[str, str], exclude_key: str | None = None) -> pd.DataFrame:
+        out = frame
+        for k, v in selections.items():
+            if k == exclude_key:
+                continue
+            v = _ap_norm(v)
+            if not v:
+                continue
+
+            col = AP_COLS[k]
+
+            # Features is often multi-valued per cell; treat selection as a token/substring match
+            if k == "features":
+                out = out[out[col].fillna("").astype(str).str.contains(_re.escape(v), na=False)]
+            else:
+                out = out[out[col].astype(str).str.strip() == v]
+        return out
+
+    def _ap_unique_sorted(frame: pd.DataFrame, key: str) -> list[str]:
+        col = AP_COLS[key]
+        series = frame[col].dropna().astype(str).str.strip()
+
+        # Numeric-aware sort when a column is truly numeric
+        numeric_vals = pd.to_numeric(series, errors="coerce")
+        if numeric_vals.notna().all():
+            return numeric_vals.sort_values().astype(str).tolist()
+
+        return sorted(series.unique().tolist())
+
+    # Current selections
+    ap_sel = {k: st.session_state.get(f"ap_{k}", "(All)") for k in AP_KEYS_IN_UI_ORDER}
+
+    # Faceted dropdowns: options for each dropdown are filtered by *all other* selections
+    for k in AP_KEYS_IN_UI_ORDER:
+        frame_for_opts = _apply_ap_filters(df, ap_sel, exclude_key=k)
+        opts = ["(All)"] + _ap_unique_sorted(frame_for_opts, k)
+
+        current = ap_sel[k]
+        if current not in opts:
+            current = "(All)"
+            st.session_state[f"ap_{k}"] = "(All)"
+            ap_sel[k] = "(All)"
+
+        label = {
+            "category": "Category",
+            "end_use": "End Use",
+            "application": "Application",
+            "features": "Features",
+            "sb_wb_hs_p": "SB / WB / HS / P",
+            "composition": "Composition",
+        }[k]
+
+        st.selectbox(label, opts, index=opts.index(current), key=f"ap_{k}")
+
+    # Normalize values for the core recommender (it treats '' as "no filter")
+    category = _ap_norm(st.session_state["ap_category"])
+    end_use = _ap_norm(st.session_state["ap_end_use"])
+    application = _ap_norm(st.session_state["ap_application"])
+    features = _ap_norm(st.session_state["ap_features"])
+    selected_features = [features] if features is not None else None
+    sb_wb_hs_p = _ap_norm(st.session_state["ap_sb_wb_hs_p"])
+    composition = _ap_norm(st.session_state["ap_composition"])
+
+    # Optional: quick sanity check count (comment out if you don't want it)
+    # st.caption(f"Matching rows in dataset (faceted): {len(_apply_ap_filters(df, ap_sel))}")
+#-------------------------------------------------------------------------------------------
+
+
 
     # ---- Results ----
     
@@ -508,12 +750,13 @@ def main() -> None:
                 application=application,
                 selected_features=selected_features,
                 sb_wb_hs_p=sb_wb_hs_p,
-                            composition=composition,
+                composition=composition,
             )
 
+            
             # If your core supports composition filtering, do it here safely:
-            if composition and "Composition" in results_df.columns:
-                results_df = results_df[results_df["Composition"].astype(str).eq(str(composition))].copy()
+            #if composition and "Composition" in results_df.columns:
+                #results_df = results_df[results_df["Composition"].astype(str).eq(str(composition))].copy()
 
         except TypeError as e:
             st.error(f"Filter call failed (signature mismatch): {e}")
@@ -525,7 +768,7 @@ def main() -> None:
         if results_df is None or not isinstance(results_df, pd.DataFrame) or results_df.empty:
             st.warning("No recommendations found for the selected criteria.")
             return
-
+        
         results_out = _drop_internal_sort_columns(results_df)
 
         results_display = _prettify_columns(results_out)
