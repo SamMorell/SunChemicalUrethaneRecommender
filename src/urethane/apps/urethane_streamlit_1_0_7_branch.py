@@ -499,71 +499,56 @@ def render_product_type_guide(repo_root: Path) -> None:
 
 
     def _pt_unique(col, df):
-        series = df[col].dropna().astype(str).str.strip()
+        """Return UNIQUE dropdown values for a column.
 
-        # Try numeric sort first
-        numeric_vals = pd.to_numeric(series, errors="coerce")
+        Goals:
+        - Text columns (e.g., Product, Product Type, NCO Type/Form, Solvents) sort alphabetically.
+        - Numeric columns (e.g., % Solids, NCO %, Viscosity, Equivalent Weight, Max. Free Monomer %) sort numerically.
+        - Mixed label+number columns used for color/scale (e.g., 'HAZEN 40', 'GARDNER 2') use natural sort.
+        - Always UNIQUE values.
+        """
+        series = df[col].dropna()
 
-        if numeric_vals.notna().all():
-            # All values are numeric → sort numerically
-            return (
-                numeric_vals
-                .sort_values()
-                .astype(str)
-                .tolist()
-            )
+        s = series.astype(str).str.strip()
+        s = s[s != ""]
+        if s.empty:
+            return []
 
-        # Mixed or non-numeric → fallback to string sort
-        return sorted(series.unique().tolist())
+        uniq_vals = pd.Series(s.unique()).tolist()
 
+        col_lc = str(col).strip().casefold()
 
+        alpha_cols = {"product", "product type", "nco type", "nco form", "solvents"}
+        if col_lc in alpha_cols:
+            return sorted(uniq_vals, key=lambda v: str(v).casefold())
 
+        s_clean = pd.Series(uniq_vals).astype(str).str.replace(",", "", regex=False).str.strip()
+        nums = pd.to_numeric(s_clean, errors="coerce")
 
+        if nums.notna().all():
+            uniq_nums = pd.Series(nums.unique()).sort_values(kind="mergesort")
 
+            def _fmt(x):
+                xf = float(x)
+                return str(int(xf)) if xf.is_integer() else str(xf)
 
+            return [_fmt(x) for x in uniq_nums.tolist()]
 
+        num_re = re.compile(r"([-+]?(?:\d+\.?\d*|\d*\.?\d+))")
 
+        def sort_key(v):
+            v_str = str(v).strip()
+            matches = num_re.findall(v_str.replace(",", ""))
+            if matches:
+                try:
+                    num = float(matches[-1])
+                except Exception:
+                    num = float("inf")
+                prefix = v_str[: v_str.rfind(matches[-1])].strip().casefold()
+                return (0, prefix, num, v_str.casefold())
+            return (1, "", float("inf"), v_str.casefold())
 
-
-
-    """def _pt_unique(col: str, frame: pd.DataFrame):
-        vals = frame[col].dropna().astype(str).str.strip()
-        vals = [v for v in vals if v]
-        if col == "Product Type":
-            # keep the spreadsheet-defined order
-            order_map = (
-                frame.dropna(subset=["Product Type", "Product Type Order"])
-                .assign(_pt=lambda d: d["Product Type"].astype(str).str.strip())
-                .groupby("_pt")["Product Type Order"]
-                .min()
-                .to_dict()
-            )
-            return sorted(set(vals), key=lambda v: (order_map.get(v, 10**9), v.lower()))
-        return sorted(set(vals), key=lambda v: v.lower())"""
-
-    # Cascading dropdowns
-    """pt_selections = {}
-    filtered = pt_df.copy()
-    for col in pt_filter_cols:
-        opts = _pt_unique(col, filtered)
-        opts = ["(All)"] + opts
-        pt_selections[col] = st.selectbox(col, opts, key=f"pt_{col}")
-        if pt_selections[col] != "(All)":
-            filtered = filtered[filtered[col].astype(str).str.strip() == pt_selections[col]]
-
-    st.markdown("")"""  # small spacer
-
-
-
-
-
-    # --- Replace "Cascading dropdowns" loop with this "selected/faceted dropdowns" filtered version. ---
-    #     It computes its options from the dataframe filtered by all the other current selections.
-    pt_filter_cols = [c for c in pt_df.columns if c != "Product Type Order"]
-
-    # Initialize session state for selections once
-    for col in pt_filter_cols:
-        st.session_state.setdefault(f"pt_{col}", "(All)")
+        return sorted(uniq_vals, key=sort_key)
 
     def _apply_filters(frame: pd.DataFrame, selections: dict, exclude_col: str | None = None) -> pd.DataFrame:
         out = frame
@@ -581,9 +566,53 @@ def render_product_type_guide(repo_root: Path) -> None:
     for col in pt_filter_cols:
         # Filter by all selections except this column
         frame_for_opts = _apply_filters(pt_df, selections, exclude_col=col)
-
         # Build options from the reduced frame
         opts = _pt_unique(col, frame_for_opts)
+
+        # Safety: ensure numeric/natural ordering even if the column has mixed formats
+        def _pt_sort_list(values, col_name: str):
+            """Final safety sort for dropdown options.
+            - For key text columns (Product, Product Type, NCO Type/Form, Solvents): pure alphabetical sort.
+            - Otherwise: numeric sort if all numeric, else natural sort by embedded number.
+            """
+            if not values:
+                return []
+            vv = [str(v).strip() for v in values if str(v).strip() != ""]
+            if not vv:
+                return []
+
+            col_lc = str(col_name).strip().casefold()
+            alpha_cols = {"product", "product type", "nco type", "nco form", "solvents"}
+            if col_lc in alpha_cols:
+                return sorted(pd.Series(vv).unique().tolist(), key=lambda x: str(x).casefold())
+
+            vclean = [v.replace(",", "").strip() for v in vv]
+            nums = pd.to_numeric(pd.Series(vclean), errors="coerce")
+            if nums.notna().all():
+                uniq_nums = pd.Series(nums.unique()).sort_values(kind="mergesort")
+                out = []
+                for x in uniq_nums.tolist():
+                    xf = float(x)
+                    out.append(str(int(xf)) if xf.is_integer() else str(xf))
+                return out
+
+            num_re = re.compile(r"([-+]?(?:\d+\.?\d*|\d*\.?\d+))")
+            uniq_vals = pd.Series(vv).unique().tolist()
+
+            def sk(v):
+                ms = num_re.findall(v.replace(",", ""))
+                if ms:
+                    try:
+                        num = float(ms[-1])
+                    except Exception:
+                        num = float("inf")
+                    prefix = v[: v.rfind(ms[-1])].strip().casefold()
+                    return (0, prefix, num, v.casefold())
+                return (1, "", float("inf"), v.casefold())
+
+            return sorted(uniq_vals, key=sk)
+
+        opts = _pt_sort_list(opts, col)
         opts = ["(All)"] + opts
 
         # If current selection is no longer valid, reset it
